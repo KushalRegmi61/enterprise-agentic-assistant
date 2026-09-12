@@ -1,12 +1,25 @@
 [project]
-name = "ai-saas-shared"
+name = "ai-saas-rag"
 version = "0.1.0"
-description = "Shared pure-Python primitives for the AI SaaS starter backend services"
+description = "Shared RAG retrieval (+ future direct ingestion) for the AI SaaS starter backend services"
 requires-python = ">=3.11"
-# Leaf package: no third-party or workspace-local dependencies (must stay
-# importable by any service without pulling service-specific SDKs).
-# Consumed by ai-saas-api (services/api) and ai-saas-worker (services/worker).
-dependencies = []
+# No workspace-local dependencies: src/rag imports only `rag.*` (verified —
+# zero `shared` imports). Previously listed ai-saas-shared, which created a
+# phantom graph edge. Consumed by ai-saas-api (services/api).
+dependencies = [
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "qdrant-client>=1.9",
+    "rank-bm25>=0.2.2",
+    "openai>=1",
+    "psycopg[binary]>=3.1",
+    "psycopg-pool>=3.1",
+    "pgvector>=0.3",
+    "tenacity>=8.2",
+    "python-jose[cryptography]>=3.3",
+    "pdfplumber>=0.11",
+    "langchain-text-splitters>=0.3",
+]
 
 [build-system]
 requires = ["setuptools>=61"]
@@ -37,7 +50,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["shared"]
+known-first-party = ["rag"]
 
 [tool.ruff.format]
 quote-style = "double"
