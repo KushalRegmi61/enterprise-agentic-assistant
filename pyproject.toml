@@ -1,7 +1,7 @@
 [project]
-name = "knowledge-os"
+name = "enterprise-agentic-assistant"
 version = "0.1.0"
-description = "Knowledge OS monorepo workspace root (umbrella over libs/* and services/*)"
+description = "Enterprise agentic-assistant monorepo workspace root (umbrella over libs/* and services/*)"
 requires-python = ">=3.11"
 # Umbrella only: runtime code lives in the workspace members below.
 dependencies = []

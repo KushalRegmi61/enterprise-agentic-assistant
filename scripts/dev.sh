@@ -1,24 +1,23 @@
 #!/bin/sh
-# Pick a free API port (uvicorn won't auto-pick), wire CORS + the
-# web-side API URL to whatever we landed on, then hand off to
+# Pick a free agent port, wire CORS + the web-side agent URL, then hand off to
 # concurrently. Next.js handles its own port fallback natively.
 set -e
 
 HERE="$(dirname "$0")"
-API_PORT="$(node "$HERE/pick-port.mjs" 8000)"
+AGENT_PORT="$(node "$HERE/pick-port.mjs" 8001)"
 
-if [ "$API_PORT" != "8000" ]; then
-  printf '\n⚠  API on http://localhost:%s (8000 was busy)\n\n' "$API_PORT"
+if [ "$AGENT_PORT" != "8001" ]; then
+  printf '\n⚠  Agent on http://localhost:%s (8001 was busy)\n\n' "$AGENT_PORT"
 fi
 
-export API_PORT
-export NEXT_PUBLIC_API_URL="http://localhost:$API_PORT"
+export AGENT_PORT
+export NEXT_PUBLIC_AGENT_URL="http://localhost:$AGENT_PORT"
 # Dev-only: accept any localhost:<port> origin so the web side works
 # regardless of which port `next dev` lands on. Never set in prod.
-export API_CORS_ORIGIN_REGEX='^http://localhost:[0-9]+$'
+export AGENTIC_ASSISTANT_CORS_ORIGINS='["http://localhost:3000", "http://localhost:3001"]'
 
 exec pnpm exec concurrently \
   --kill-others-on-fail \
-  --names web,api \
+  --names assistant-web,agent \
   --prefix-colors blue,green \
-  "pnpm dev:web" "pnpm dev:api"
+  "pnpm dev:assistant-web" "pnpm dev:agent"

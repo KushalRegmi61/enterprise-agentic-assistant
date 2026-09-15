@@ -1,168 +1,20 @@
-<!-- last_verified: 2026-07-21 -->
-# Architecture
+# Architecture — enterprise-agentic-assistant
 
 ## Components
 
-- **apps/web/** — Next.js 16 frontend (App Router, Tailwind v4, shadcn/ui)
-  - Supabase auth: sign in/up, `/account`, session refresh + route protection via `proxy.ts`
-  - Route groups: `(app)` (authenticated shell) and `(auth)` (chrome-free sign-in/up)
-  - Stripe billing: `/billing` plan catalog, Checkout/Portal redirects, plan-gated surfaces
-  - Dashboard with stats, upload chart, recent uploads
-  - File upload with drag-and-drop, progress tracking
-  - File browser with preview, download, delete
-  - Dark mode via `next-themes`
-- **services/api/** — FastAPI backend (layered architecture)
-  - REST API for file upload, listing, deletion
-  - B2 S3 integration via boto3
-  - Stripe billing: checkout/portal sessions, signature-verified webhook → Supabase sync, `require_plan` gate
-  - Presigned direct browser→B2 uploads (the API signs + confirms; bytes never transit it)
-  - Health check endpoint with B2 connectivity verification
-  - Structured JSON logging with request tracing
-  - Prometheus-format metrics endpoint
-  - Depends on `ai-saas-shared` (editable workspace install) for key validation
-- **services/shared/** — Shared pure-Python primitives (`ai-saas-shared`, zero third-party deps)
-  - Object-key validation (`shared.keys.has_path_traversal`) used by the API and the worker
-  - Consumed by `services/api/` and `services/worker/` as workspace dependencies
-- **libs/rag/** — Shared RAG library (`ai-saas-rag`, retrieval + direct ingestion)
-  - Single tool `rag.retrieval.search_rag()` (Qdrant vectors + Neon registry/cache, RBAC + cache internal)
-  - `retrieval/` replaces `service/` as the domain layer; `ingestion/` holds direct single-document indexing (`index_document`, auto-called from `finalize_upload`; no S3/Lambda/jobs)
-  - Importable engine, auth-agnostic (callers pass `AccessFilter`; JWT mapping lives in each host). Consumed by `services/api/` as a workspace dependency (`-e ../../libs/rag`)
-- **services/worker/** — Minimal background-worker CLI (`ai-saas-worker`)
-  - `validate-key` (traversal guard) and `health` commands; second consumer of `ai-saas-shared`
-- **services/agentic-assistant/** — Agentic knowledge assistant backend (`ai-saas-agentic-assistant`)
-  - LangGraph workflow (`agent/graph/`: retrieve → grade → rewrite/generate → grounding check) over the shared RAG library; RAG retrieval registered as agent tools bound to the host-resolved `AccessFilter`
-  - Agent-local identity (`api/auth.py` + `models/users.py`): Neon-backed login, admin user provisioning, role changes, and audit events using the shared `libs/auth` primitives
-  - Persistent authenticated `WS /ask` chat with short-lived WebSocket tickets, native async graph/tool/RAG execution, streamed workflow events, and Neon-backed six-turn memory plus rolling summaries
-  - LangFuse tracing (`agent/tracing.py`: span context manager + LangChain callbacks, no-op unless keys configured); retrieval remains host-filtered while the agent owns its assistant JWT issuance
-- **packages/shared/** — TypeScript type definitions
-  - Mirrors Pydantic models from the API
-  - Consumed by `apps/web/` as workspace dependency
+- **apps/agentic-assistant-web/** — Next.js chat UI (App Router, Tailwind, react-query, react-markdown). Talks to the agent backend on `NEXT_PUBLIC_AGENT_URL` (:8001).
+- **services/agentic-assistant/** — FastAPI backend (`main.py`): ingestion (`POST /ingest`), auth (`POST /auth/login`, `WS /ask` tickets), projects + project-tokens, persistent `WS /ask` chat streaming LangGraph workflow events. LangGraph (`src/agent/graph/`: retrieve → grade → rewrite/generate → grounding) over `libs/rag`, LangFuse tracing optional.
+- **libs/rag/** (`ai-saas-rag`) — importable retrieval engine (vectors + registry/cache, RBAC via caller-passed `AccessFilter`).
+- **libs/auth/** (`ai-saas-auth`) — roles, password hashing, token mint/verify, user store helpers.
+- **services/shared/** (`ai-saas-shared`) — zero-dependency pure primitives.
 
-## Backend Layering
+## Data stores
 
-The API follows a strict layered architecture:
-
-```
-types/     Pydantic models — no logic, no imports from other layers
-  |
-config/    Settings (pydantic-settings) — depends only on types
-  |
-repo/      Data access (boto3 B2 client) — no business logic
-  |
-service/   Business logic — calls repo, returns types
-  |
-runtime/   FastAPI routes — calls service, never repo directly
-```
-
-### Layering Rules
-
-1. Dependencies flow downward only: `types` -> `config` -> `repo` -> `service` -> `runtime`
-2. No backward imports (e.g., service must not import from runtime)
-3. `boto3` only allowed in `repo/` layer
-4. All boundary data uses Pydantic models (no raw dicts across layers)
-5. Each file stays under 300 lines
-
-### Directory Structure
-
-```
-services/api/
-  main.py                  App entrypoint, middleware, router registration
-  app/
-    types/                 Pydantic models (FileMetadata, UploadStats, etc.)
-    config/                Settings loaded from environment
-    repo/                  B2 S3 client (data access layer)
-    service/               Business logic (upload, files, metadata)
-    runtime/               FastAPI route handlers
-  tests/                   pytest tests (structural + integration)
-```
-
-## Boundary Invariants
-
-- **No external SDK leakage**: `boto3` is only imported in `app/repo/`. All other layers interact with B2 through the repo interface.
-- **No raw dicts at boundaries**: All data crossing layer boundaries uses typed Pydantic models.
-- **No cross-layer mutable state**: Configuration is read-only after init, and no mutable state is shared *between* layers. Intra-layer caches/counters (the listing cache in `repo/b2_client.py`, the download counter in `repo/counter.py`, the rate-limit and metrics state in `runtime/`) are module-local and guarded by a `threading.Lock`.
-- **Validated inputs**: All HTTP inputs validated by FastAPI/Pydantic. File keys reject empty and path-traversal patterns; optional prefix confinement via `ALLOWED_KEY_PREFIX` (off by default).
+- Neon Postgres — assistant users, conversations/summaries, RAG registry + cache (`AGENTIC_ASSISTANT_DATABASE_URL`).
+- Qdrant — vector index used via `libs/rag`.
 
 ## Deployment
 
-- **Local dev** — `pnpm dev` runs both services via `concurrently`
-  - Web: `localhost:3000`
-  - API: `localhost:8000`
-- **Railway** — two services from the same repo
-  - See `infra/railway/README.md` for configuration
-
-## Data Stores
-
-- **Backblaze B2** — object storage (S3-compatible API)
-  - All uploaded files stored in a single bucket
-  - File listing and metadata via S3 `list_objects_v2` / `head_object`
-- **Supabase Postgres** — auth + application database
-  - `auth.users` (managed by Supabase) plus `public.profiles` (1:1) and `public.roles`
-  - Billing: `public.plans` (catalog), `public.subscriptions` (one synced row/user),
-    `public.stripe_events` (webhook idempotency) — subscription rows are written only
-    by the webhook via the service role (RLS lets a user read only their own)
-  - Row Level Security scopes reads/writes to the owning user (admins see all)
-  - Schema lives in a single init file, `supabase/migrations/00000000000000_init.sql` (auth, billing, generation, admin sections); local dev runs the full stack via `supabase start`
-
-## External Services
-
-- **Backblaze B2 S3 API** — file storage, retrieval, deletion, presigned URLs
-- **Supabase** — authentication (GoTrue) + Postgres/PostgREST; local or hosted, config-only swap
-- **Stripe** — subscription billing (Checkout, Billing Portal, webhooks); test-mode for local dev
-- **Neon Postgres** — agentic-assistant user identity, audit events, conversation turns/summaries, RAG registry, and query cache; configured through `AGENTIC_ASSISTANT_DATABASE_URL`
-
-## Trust Boundaries
-
-See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
-
-- **Frontend -> API** — CORS-restricted to configured origins. `CORSMiddleware` is registered LAST in `main.py` (outermost) so it wraps **every** response, including uncaught-exception 500s — otherwise the browser would block error responses and the UI would only see an opaque "network error". See [docs/RELIABILITY.md](docs/RELIABILITY.md#error-handling). A per-IP rate-limit middleware sits inner to CORS; see [docs/SECURITY.md](docs/SECURITY.md#rate-limiting).
-- **API -> B2** — authenticated via application keys, signature v4
-- **Client -> B2** — presigned URLs for download (10-min expiry, forced attachment)
-
-## Data Flows
-
-- **Auth**: Browser -> Supabase (sign up/in) -> confirm via `/auth/confirm` -> cookie session; `proxy.ts` refreshes it per request and redirects unauthenticated users to `/signin`. API calls carry the token; the API validates it against Supabase (`repo/supabase_auth.py`).
-- **Assistant auth/chat**: Browser or operator -> `POST /auth/login` on agentic-assistant -> assistant JWT (`sub`/`role`/`exp`/`iat`/`iss`) -> `POST /auth/ws-ticket` -> first-frame authentication on persistent `WS /ask`; admin user routes require the normal JWT and remain independent from Supabase `profiles.role`.
-- **Billing**: Browser -> `POST /billing/checkout` -> Stripe Checkout (redirect) -> Stripe -> `POST /billing/webhook` (signature-verified) -> `service/billing.py` upserts the subscription into Supabase (service role). `require_plan(min_tier)` reads the derived entitlements and 402s below the required tier.
-- **Upload** (direct browser→B2): Browser -> `POST /upload/presign` -> API validates the intent + signs a type-bound PUT URL -> Browser `PUT`s the bytes straight to B2 -> Browser -> `POST /upload/complete` -> API confirms existence, true size, and magic-byte signature (deleting a spoofed object) -> response. Bytes never transit the API, so uploads aren't bounded by a serverless request-body cap.
-- **List**: Browser -> `GET /files` -> service calls repo -> returns file list
-- **Retrieval/chat**: authenticated `WS /ask` resolves the JWT role to an `AccessFilter`, loads the owned rolling memory from Neon through async persistence, invokes the async agent-internal `search_knowledge_base` tool → `rag.retrieval.search_rag_async()` (router → concurrent Qdrant retrieval → BM25/RRF → rerank → async Neon cache), streams safe steps and final-answer tokens, then persists the complete exchange and summary. The old API `POST /retrieval/search` route was removed with the in-process RAG logic.
-- **Ingestion**: `POST /upload/complete` -> `finalize_upload` -> best-effort forward via `repo/ingest_client` -> agentic-assistant `POST /ingest` (service token; load → chunk → embed → Qdrant + Neon registry); delete purges via agent `DELETE /sources`. Indexing never fails the upload (`rag_indexed=false`).
-- **Download**: Browser -> `GET /files-by-key/download?key=...` -> service validates + ownership-scopes the key -> repo generates presigned URL -> browser downloads
-- **Delete**: Browser -> `DELETE /files-by-key?key=...` -> service validates + ownership-scopes the key -> repo deletes from B2
-
-## Observability
-
-- Structured JSON logging on all requests with `request_id`
-- Request timing middleware (logs duration per request; also the catch-all that converts uncaught exceptions to a typed JSON 500)
-- `/metrics` endpoint (Prometheus format: request count, latency, upload count)
-- `/health` endpoint (B2 connectivity check)
-
-## Canonical Files
-
-- Layered API handler: `services/api/app/runtime/upload.py`
-- Service orchestration: `services/api/app/service/upload.py`
-- B2 data access (repo layer): `services/api/app/repo/b2_client.py`
-- Pydantic models: `services/api/app/types/` (`files.py`, `upload.py`, `stats.py`, `formatting.py`)
-- Billing (layered): `services/api/app/runtime/billing.py` → `service/billing.py` → `repo/{stripe_client,supabase_billing}.py`
-- Shared Supabase HTTP pool: `services/api/app/repo/http_client.py` — one process-wide `httpx.AsyncClient` reused by all Supabase adapters, opened/closed in `main.lifespan`
-- Config (pydantic-settings): `services/api/app/config/settings.py`
-- Structural tests: `services/api/tests/test_structure.py`
-- Shared key validation: `services/shared/src/shared/keys.py` (consumed by API + worker)
-- Worker CLI: `services/worker/src/worker/main.py`
-- Frontend API client: `apps/web/src/lib/api-client.ts`
-- Shared TypeScript types: `packages/shared/src/types.ts`
-
-## Core Features
-
-- [Authentication](docs/features/authentication.md)
-- [Billing](docs/features/billing.md)
-- [File Upload](docs/features/file-upload.md)
-- [File Browser](docs/features/file-browser.md)
-- [Dashboard](docs/features/dashboard.md)
-
-## References
-
-- [docs/SECURITY.md](docs/SECURITY.md) — security principles and implementation
-- [docs/RELIABILITY.md](docs/RELIABILITY.md) — reliability expectations
-- [AGENTS.md](AGENTS.md) — architectural invariants and agent instructions
+- Local: `pnpm dev` (web :3001, agent :8001).
+- Docker: `docker build -f services/agentic-assistant/Dockerfile .` (root context; workspace sources stay at `libs/*`, `services/*`).
+- Railway: `services/agentic-assistant/railway.json` (Dockerfile builder, `/health` healthcheck). See `infra/railway/README.md`.

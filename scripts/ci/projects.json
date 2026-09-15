@@ -1,35 +1,8 @@
 {
-  "apps/web": {
-    "ecosystem": "node",
-    "package_name": "@ai-saas-starter-kit/web",
-    "tasks": ["pnpm lint", "pnpm test:web", "pnpm build", "pnpm typecheck"]
-  },
   "apps/agentic-assistant-web": {
     "ecosystem": "node",
     "package_name": "@ai-saas-starter-kit/agentic-assistant-web",
     "tasks": ["pnpm lint:assistant-web", "pnpm build:assistant-web", "pnpm typecheck:assistant-web"]
-  },
-  "packages/shared": {
-    "ecosystem": "node",
-    "package_name": "@ai-saas-starter-kit/shared",
-    "tasks": []
-  },
-  "services/api": {
-    "ecosystem": "python",
-    "package_name": "ai-saas-api",
-    "tasks": [
-      ".venv/bin/ruff check services/api",
-      ".venv/bin/python -m pytest services/api",
-      ".venv/bin/python -m pytest services/api/tests/test_structure.py -v"
-    ]
-  },
-  "services/worker": {
-    "ecosystem": "python",
-    "package_name": "ai-saas-worker",
-    "tasks": [
-      ".venv/bin/ruff check services/worker",
-      ".venv/bin/python -m pytest services/worker"
-    ]
   },
   "services/agentic-assistant": {
     "ecosystem": "python",
