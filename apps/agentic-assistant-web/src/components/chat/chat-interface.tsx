@@ -160,7 +160,7 @@ export function ChatInterface({ token }: ChatInterfaceProps) {
 
           <div className="min-w-0">
             <h1 className="font-semibold text-sm sm:text-base leading-tight flex items-center gap-2 truncate">
-              Agentic RAG Assistant
+              Agentic Assistant
               <span
                 title={isConnected ? "Connected" : "Connecting…"}
                 className={`shrink-0 inline-block w-2 h-2 rounded-full transition-colors ${

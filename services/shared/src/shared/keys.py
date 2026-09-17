@@ -9,6 +9,7 @@ guards can never drift apart.
 import re
 
 # Path-traversal / null-byte patterns that must never appear in an object key.
+# CI trigger: no functional change.
 _TRAVERSAL_RE = re.compile(r"(\.\./|/\.\.|\\|%2e%2e|%00|\x00)")
 
 

@@ -6,7 +6,19 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-agent_orchestration-orange)](https://www.langchain.com/langgraph)
 [![Qdrant](https://img.shields.io/badge/Qdrant-vector_search-red)](https://qdrant.tech/)
 
-**An AI knowledge assistant that answers questions about your projects and documents — with cited evidence, access control the AI can't escape, and guardrails against hallucination.**
+**The Agentic Assistant is an AI-native internal system designed to reduce the manual effort required for project-status reporting and management visibility. The system connects the engineering workflow of a Tech Lead with a manager-facing AI assistant.**
+
+**The core idea:**
+
+- A Tech Lead works normally through a coding agent such as Claude Code.
+- The coding agent connects to a Project Update MCP Server.
+- The MCP server allows the Tech Lead's agent to read project context and submit confirmed project-status updates.
+- Structured project state is stored in PostgreSQL.
+- Project documentation is stored separately in a vector-backed knowledge base for RAG.
+- A manager-facing LangGraph agent combines structured project tools with RAG when answering management questions.
+- A manager dashboard provides a portfolio/project overview and conversational access to project intelligence.
+
+*The system is intentionally scoped around two human roles for the initial POC: Tech Lead and Manager. Multi-tenancy and additional employee roles are outside the initial scope.*
 
 `Next.js 16` · `React 19` · `FastAPI` · `LangGraph` · `Qdrant` · `Neon Postgres` · `OpenAI` · `Langfuse` · `MCP` · `Docker`
 
@@ -14,12 +26,12 @@
 
 ## Highlights
 
-- 💬 **Evidence-backed chat** — every answer cites the project facts and document chunks behind it, streamed live over WebSocket.
-- 🔒 **AI-proof access control** — permission scopes are derived server-side from your login; the model can never grant itself wider access.
-- 🛡️ **Admits what it doesn't know** — a grading step rewrites weak queries or safely recovers instead of hallucinating.
-- 💰 **Cost-aware models** — chitchat goes to a cheap fast model; only real questions invoke the reasoning model with tools.
-- 📊 **Project dashboards** — role-scoped views of features, blockers, updates, history, and audit events.
-- 🔌 **MCP server for coding agents** — AI dev tools read and update project state through a project-scoped MCP endpoint.
+- 💬 **Evidence-backed chat** - every answer cites the project facts and document chunks behind it, streamed live over WebSocket.
+- 🔒 **AI-proof access control** - permission scopes are derived server-side from your login; the model can never grant itself wider access.
+- 🛡️ **Admits what it doesn't know** - a grading step rewrites weak queries or safely recovers instead of hallucinating.
+- 💰 **Cost-aware models** - chitchat goes to a cheap fast model; only real questions invoke the reasoning model with tools.
+- 📊 **Project dashboards** - role-scoped views of features, blockers, updates, history, and audit events.
+- 🔌 **MCP server for coding agents** - AI dev tools read and update project state through a project-scoped MCP endpoint.
 
 ---
 
@@ -91,11 +103,11 @@ A typical question flows: **login → JWT → one-time WebSocket ticket → inte
 
 ## MCP for coding agents
 
-AI coding assistants (Claude Code, Codex, etc.) connect directly to the project's live state through a **project-scoped MCP server** at `/mcp` — no separate integration work needed:
+AI coding assistants (Claude Code, Codex, etc.) connect directly to the project's live state through a **project-scoped MCP server** at `/mcp` - no separate integration work needed:
 
-- **Token-scoped access** — each project gets its own bearer token, so an agent only ever sees and touches its assigned project.
-- **5 tools** — `get_project_context`, `get_project_updates`, `manage_project_feature`, `manage_project_blocker`, `submit_daily_update`.
-- **Human-in-the-loop writes** — the server instructs agents to show proposed changes and get explicit tech-lead confirmation before any write, and to reference features/blockers by natural language instead of inventing IDs.
+- **Token-scoped access** - each project gets its own bearer token, so an agent only ever sees and touches its assigned project.
+- **5 tools** - `get_project_context`, `get_project_updates`, `manage_project_feature`, `manage_project_blocker`, `submit_daily_update`.
+- **Human-in-the-loop writes** - the server instructs agents to show proposed changes and get explicit tech-lead confirmation before any write, and to reference features/blockers by natural language instead of inventing IDs.
 
 In practice: your coding agent submits its daily update via MCP when work lands, and the assistant's dashboards and chat answers reflect it immediately. The web UI shows each project's MCP endpoint for one-line agent setup.
 
@@ -190,8 +202,8 @@ CI runs lint, build, and unit-test gates per affected project on every push and 
 
 The API and frontend deploy as separate processes:
 
-- **API** — Docker build from the repo root (`services/agentic-assistant/Dockerfile`, which needs the `libs/*` workspace alongside it); Railway config in `services/agentic-assistant/railway.json` with a `/health` healthcheck.
-- **Frontend** — standard Next.js build; point `NEXT_PUBLIC_AGENT_URL` at the deployed API.
+- **API** - Docker build from the repo root (`services/agentic-assistant/Dockerfile`, which needs the `libs/*` workspace alongside it); Railway config in `services/agentic-assistant/railway.json` with a `/health` healthcheck.
+- **Frontend** - standard Next.js build; point `NEXT_PUBLIC_AGENT_URL` at the deployed API.
 
 Both require Neon, Qdrant, an LLM provider, and the `AGENTIC_ASSISTANT_*` configuration. See [infra/railway/](infra/railway/) for details.
 
@@ -200,7 +212,7 @@ Both require Neon, Qdrant, an LLM provider, and the `AGENTIC_ASSISTANT_*` config
 ## Contributing
 
 1. Read [AGENTS.md](AGENTS.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
-2. Keep changes inside the appropriate package — no cross-layer backward imports, no `print()` statements, files under 300 lines.
+2. Keep changes inside the appropriate package - no cross-layer backward imports, no `print()` statements, files under 300 lines.
 3. Add or update tests with every behavior change; update this README or `ARCHITECTURE.md` alongside it.
 4. Run the focused tests first, then the relevant lint and build checks.
 
