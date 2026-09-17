@@ -18,8 +18,6 @@
 - A manager-facing LangGraph agent combines structured project tools with RAG when answering management questions.
 - A manager dashboard provides a portfolio/project overview and conversational access to project intelligence.
 
-*The system is intentionally scoped around two human roles for the initial POC: Tech Lead and Manager. Multi-tenancy and additional employee roles are outside the initial scope.*
-
 `Next.js 16` · `React 19` · `FastAPI` · `LangGraph` · `Qdrant` · `Neon Postgres` · `OpenAI` · `Langfuse` · `MCP` · `Docker`
 
 ---
